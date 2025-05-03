@@ -1,230 +1,468 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Eraser, Trash2, Save, Share2, Check } from 'lucide-react';
+import { Palette, Square, Circle as CircleIcon, Eye, Smile, Trash2, Save, BringToFront, SendToBack, RotateCcw, RotateCw } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
 
-const GRID_SIZE = 16;
-const DEFAULT_EMOJI = '⬜️'; // White square as placeholder/empty
+// Define element types and their properties
+interface EmojiElement {
+  id: string;
+  type: 'base' | 'eye' | 'mouth' | 'accessory';
+  shape: 'circle' | 'square' | 'simple-eye' | 'simple-smile'; // Add more shapes as needed
+  color: string;
+  x: number;
+  y: number;
+  size: number;
+  rotation: number;
+  zIndex: number;
+}
 
-// Basic emoji palette (expandable)
-const defaultEmojis = [
-  '😀', '😂', '😍', '🥳', '😎', '😭', '🤔', '👍', '❤️', '🔥',
-  '⭐️', '🎉', '💡', '🍎', '🍔', '⚽️', '🚗', '✈️', '🏠', '🌲',
-  '☀️', '☁️', '💧', '🌊', '🌍', '🌝', '🌚', '🌵', '🌸', '🐶',
-  '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁' // 40 Emojis
-];
+// Predefined elements library
+const elementLibrary = {
+  base: [
+    { type: 'base', shape: 'circle', color: '#FFD700', size: 100, name: 'Yellow Circle' }, // Gold-like yellow
+    { type: 'base', shape: 'square', color: '#ADD8E6', size: 100, name: 'Light Blue Square' }, // Light blue
+  ],
+  eye: [
+    { type: 'eye', shape: 'simple-eye', color: '#000000', size: 15, name: 'Simple Black Eye' },
+  ],
+  mouth: [
+     { type: 'mouth', shape: 'simple-smile', color: '#000000', size: 30, name: 'Simple Black Smile' },
+  ],
+  accessory: [] // Add accessories later
+};
 
-type GridState = string[][];
+// Generate unique IDs
+let elementCounter = 0;
+const generateId = () => `element-${Date.now()}-${elementCounter++}`;
 
 export default function CreatePage() {
   const { toast } = useToast();
-  const initialGrid = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(DEFAULT_EMOJI));
-  const [grid, setGrid] = useState<GridState>(initialGrid);
-  const [selectedEmoji, setSelectedEmoji] = useState<string>('😀');
-  const [isEraser, setIsEraser] = useState<boolean>(false);
-  const [isDrawing, setIsDrawing] = useState<boolean>(false);
-  const [shareUrl, setShareUrl] = useState<string | null>(null);
-  const gridRef = useRef<HTMLDivElement>(null);
+  const [composition, setComposition] = useState<EmojiElement[]>([]);
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [canvasSize, setCanvasSize] = useState({ width: 500, height: 500 }); // Default or dynamic size
+  const [draggingElement, setDraggingElement] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null);
+  const [currentColor, setCurrentColor] = useState<string>('#000000');
 
+  // Update canvas size on mount and resize
+  useEffect(() => {
+    const updateSize = () => {
+      if (canvasRef.current) {
+        const { clientWidth } = canvasRef.current;
+        // Keep it square, use width for height as well, max 500
+        const size = Math.min(clientWidth, 500);
+        setCanvasSize({ width: size, height: size });
+      }
+    };
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
 
-  const handleCellClick = (rowIndex: number, colIndex: number) => {
-    const newGrid = grid.map(row => [...row]);
-    newGrid[rowIndex][colIndex] = isEraser ? DEFAULT_EMOJI : selectedEmoji;
-    setGrid(newGrid);
+  // Add element to composition
+  const addElement = (elementType: keyof typeof elementLibrary, elementTemplate: any) => {
+    const newElement: EmojiElement = {
+      ...elementTemplate,
+      id: generateId(),
+      x: canvasSize.width / 2 - elementTemplate.size / 2, // Center initially
+      y: canvasSize.height / 2 - elementTemplate.size / 2,
+      rotation: 0,
+      zIndex: composition.length + 1, // Place on top
+    };
+    setComposition([...composition, newElement]);
+    setSelectedElementId(newElement.id); // Select the new element
   };
 
-  const handleCellHover = (rowIndex: number, colIndex: number) => {
-    if (isDrawing) {
-      handleCellClick(rowIndex, colIndex);
-    }
+  // Select element
+  const handleSelectElement = (id: string, event: React.MouseEvent) => {
+     event.stopPropagation(); // Prevent triggering canvas deselect
+     setSelectedElementId(id);
   };
 
-  const handleMouseDown = (rowIndex: number, colIndex: number) => {
-    setIsDrawing(true);
-    handleCellClick(rowIndex, colIndex); // Also draw on initial click
+  // Deselect element when clicking on the canvas background
+  const handleCanvasClick = () => {
+      setSelectedElementId(null);
+  };
+
+  // Update element properties
+  const updateElement = (id: string, updates: Partial<EmojiElement>) => {
+    setComposition(comp =>
+      comp.map(el => (el.id === id ? { ...el, ...updates } : el))
+    );
+  };
+
+  // --- Dragging Logic ---
+  const handleMouseDown = (id: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    const element = composition.find(el => el.id === id);
+    if (!element) return;
+    setSelectedElementId(id); // Select on drag start
+
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    if (!canvasRect) return;
+
+    const startX = event.clientX - canvasRect.left;
+    const startY = event.clientY - canvasRect.top;
+
+    setDraggingElement({
+      id: id,
+      offsetX: startX - element.x,
+      offsetY: startY - element.y,
+    });
+  };
+
+  const handleMouseMove = (event: React.MouseEvent) => {
+    if (!draggingElement || !canvasRef.current) return;
+    event.preventDefault(); // Prevent text selection during drag
+
+    const canvasRect = canvasRef.current.getBoundingClientRect();
+    let newX = event.clientX - canvasRect.left - draggingElement.offsetX;
+    let newY = event.clientY - canvasRect.top - draggingElement.offsetY;
+
+    // Constrain within canvas boundaries (optional, based on element size)
+    // newX = Math.max(0, Math.min(canvasSize.width - (composition.find(el => el.id === draggingElement.id)?.size || 0), newX));
+    // newY = Math.max(0, Math.min(canvasSize.height - (composition.find(el => el.id === draggingElement.id)?.size || 0), newY));
+
+
+    updateElement(draggingElement.id, { x: newX, y: newY });
   };
 
   const handleMouseUp = () => {
-    setIsDrawing(false);
+    setDraggingElement(null);
   };
 
-  const handleMouseLeaveGrid = () => {
-    setIsDrawing(false); // Stop drawing if mouse leaves the grid area
+  const handleMouseLeave = () => {
+     if (draggingElement) {
+      setDraggingElement(null); // Stop dragging if mouse leaves canvas
+     }
+   };
+
+
+  // Delete selected element
+  const deleteSelectedElement = () => {
+    if (!selectedElementId) return;
+    setComposition(comp => comp.filter(el => el.id !== selectedElementId));
+    setSelectedElementId(null);
+    toast({ title: "Element Removed" });
   };
 
-  const selectTool = (emoji: string) => {
-    setSelectedEmoji(emoji);
-    setIsEraser(false);
+  // Clear entire composition
+  const clearComposition = () => {
+    setComposition([]);
+    setSelectedElementId(null);
+    toast({ title: "Canvas Cleared" });
   };
 
-  const activateEraser = () => {
-    setIsEraser(true);
+  // Change element layer (z-index)
+  const changeLayer = (direction: 'up' | 'down') => {
+    if (!selectedElementId) return;
+    const currentIndex = composition.findIndex(el => el.id === selectedElementId);
+    if (currentIndex === -1) return;
+
+    const newComposition = [...composition];
+    const element = newComposition[currentIndex];
+
+    if (direction === 'up' && currentIndex < newComposition.length - 1) {
+      // Bring forward: Swap zIndex with the element above
+      const elementAbove = newComposition[currentIndex + 1];
+      [element.zIndex, elementAbove.zIndex] = [elementAbove.zIndex, element.zIndex];
+    } else if (direction === 'down' && currentIndex > 0) {
+      // Send backward: Swap zIndex with the element below
+      const elementBelow = newComposition[currentIndex - 1];
+       [element.zIndex, elementBelow.zIndex] = [elementBelow.zIndex, element.zIndex];
+    }
+
+    // Re-sort based on zIndex to maintain visual order
+    newComposition.sort((a, b) => a.zIndex - b.zIndex);
+    setComposition(newComposition);
   };
 
-  const clearGrid = () => {
-    setGrid(initialGrid);
-     toast({
-        title: "Grid Cleared",
-        description: "Started fresh with a blank canvas!",
-      });
-  };
+    // Rotate element
+    const rotateElement = (direction: 'cw' | 'ccw') => {
+        if (!selectedElementId) return;
+        const currentElement = composition.find(el => el.id === selectedElementId);
+        if (!currentElement) return;
+        const rotationAmount = direction === 'cw' ? 15 : -15;
+        updateElement(selectedElementId, { rotation: (currentElement.rotation + rotationAmount) % 360 });
+    };
 
-  const saveArt = async () => {
-    // In a real app, save to Firestore and generate image/URL here
-    console.log('Saving art:', JSON.stringify(grid));
-    // Simulate saving and getting a URL
-    const generatedUrl = `/art/example-${Date.now()}`;
-    setShareUrl(generatedUrl);
-     toast({
-        title: "Art Saved!",
-        description: "Your emoji masterpiece is saved.",
-        action: (
-          <Button variant="outline" size="sm" onClick={() => copyToClipboard(generatedUrl)}>
-            Copy Link
-          </Button>
-        ),
-      });
-  };
 
-  const copyToClipboard = (text: string | null) => {
-    if (!text) return;
-    navigator.clipboard.writeText(`${window.location.origin}${text}`)
-      .then(() => {
-        toast({
-          title: "Link Copied!",
-          description: "Shareable link copied to clipboard.",
-        });
-      })
-      .catch(err => {
-        console.error('Failed to copy: ', err);
-        toast({
-          title: "Copy Failed",
-          description: "Could not copy the link.",
-          variant: "destructive",
-        });
-      });
-  };
+  // Save composition (placeholder)
+  const saveComposition = () => {
+     // In a real app, serialize 'composition' to JSON and save to Firestore.
+     // Could also generate an SVG or PNG preview.
+     console.log('Saving composition:', JSON.stringify(composition));
+     toast({ title: "Composition Saved (Simulated)", description: "Check console for data." });
+   };
 
+  // Get selected element data for controls
+  const selectedElement = composition.find(el => el.id === selectedElementId);
+
+
+  // --- Rendering SVG Elements ---
+  const renderElement = (element: EmojiElement) => {
+    const style: React.CSSProperties = {
+      position: 'absolute',
+      left: `${element.x}px`,
+      top: `${element.y}px`,
+      width: `${element.size}px`,
+      height: `${element.size}px`,
+      transform: `rotate(${element.rotation}deg)`,
+      cursor: draggingElement?.id === element.id ? 'grabbing' : 'grab',
+      zIndex: element.zIndex,
+      outline: selectedElementId === element.id ? '2px dashed var(--accent)' : 'none',
+       outlineOffset: '2px',
+       userSelect: 'none', // Prevent text selection on elements
+    };
+
+    switch (element.shape) {
+      case 'circle':
+        return (
+          <div
+            key={element.id}
+            style={style}
+            onMouseDown={(e) => handleMouseDown(element.id, e)}
+            onClick={(e) => handleSelectElement(element.id, e)}
+          >
+            <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ display: 'block' }}>
+              <circle cx="50" cy="50" r="50" fill={element.color} />
+            </svg>
+          </div>
+        );
+      case 'square':
+         return (
+            <div
+             key={element.id}
+             style={style}
+             onMouseDown={(e) => handleMouseDown(element.id, e)}
+             onClick={(e) => handleSelectElement(element.id, e)}
+           >
+             <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ display: 'block' }}>
+               <rect x="0" y="0" width="100" height="100" fill={element.color} />
+             </svg>
+           </div>
+         );
+      case 'simple-eye':
+         return (
+           <div
+              key={element.id}
+              style={style}
+              onMouseDown={(e) => handleMouseDown(element.id, e)}
+              onClick={(e) => handleSelectElement(element.id, e)}
+            >
+             <svg viewBox="0 0 20 20" width="100%" height="100%" style={{ display: 'block' }}>
+               <circle cx="10" cy="10" r="8" fill={element.color} /> {/* Black part */}
+                <circle cx="12" cy="8" r="2" fill="#FFFFFF" /> {/* White highlight */}
+             </svg>
+           </div>
+         );
+      case 'simple-smile':
+        return (
+           <div
+             key={element.id}
+             style={style}
+             onMouseDown={(e) => handleMouseDown(element.id, e)}
+             onClick={(e) => handleSelectElement(element.id, e)}
+           >
+             <svg viewBox="0 0 50 20" width="100%" height="100%" style={{ display: 'block' }}>
+               <path d="M 5,10 Q 25,20 45,10" stroke={element.color} strokeWidth="3" fill="none" strokeLinecap="round" />
+             </svg>
+           </div>
+        );
+      // Add more cases for other shapes
+      default:
+        return null;
+    }
+  };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 items-start">
-      {/* Editor Grid */}
-      <Card className="flex-grow bg-card shadow-lg">
+    <div className="flex flex-col lg:flex-row gap-6 items-start">
+
+      {/* Emoji Composer Canvas */}
+      <Card className="flex-grow bg-card shadow-lg overflow-hidden">
         <CardHeader>
-          <CardTitle>Emoji Canvas</CardTitle>
+          <CardTitle>Emoji Composer</CardTitle>
         </CardHeader>
         <CardContent>
           <div
-            ref={gridRef}
-            className="grid border border-border rounded-md overflow-hidden bg-background"
-            style={{
-              gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
-              width: '100%',
-              aspectRatio: '1 / 1', // Maintain square aspect ratio
-              cursor: isEraser ? 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' class=\'lucide lucide-eraser\'><path d=\'M19.06 4.94a10 10 0 0 1 0 14.12L4.94 4.94a10 10 0 0 1 14.12 0Z\'/><path d=\'m21.12 6.06-5.06 5.06\'/></svg>") 12 12, auto' : `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="18">${selectedEmoji}</text></svg>') 12 12, pointer`,
-            }}
-            onMouseLeave={handleMouseLeaveGrid} // Handle mouse leaving the grid container
+            ref={canvasRef}
+            className="relative border border-border rounded-md bg-background cursor-default overflow-hidden"
+            style={{ width: `${canvasSize.width}px`, height: `${canvasSize.height}px` }}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseLeave} // Add mouse leave handler
+            onClick={handleCanvasClick} // Add canvas click handler for deselection
           >
-            {grid.map((row, rowIndex) =>
-              row.map((cell, colIndex) => (
-                <div
-                  key={`${rowIndex}-${colIndex}`}
-                  className="flex items-center justify-center border-r border-b border-secondary last:border-r-0 group-last:border-b-0"
-                  style={{
-                    fontSize: '1.5vw', // Responsive emoji size based on viewport width
-                    minWidth: '20px', // Ensure minimum size
-                    minHeight: '20px',
-                    lineHeight: 1,
-                     aspectRatio: '1 / 1', // Ensure cell is square
-                  }}
-                  onClick={() => handleCellClick(rowIndex, colIndex)}
-                  onMouseDown={() => handleMouseDown(rowIndex, colIndex)}
-                  onMouseUp={handleMouseUp}
-                  onMouseEnter={() => handleCellHover(rowIndex, colIndex)} // Use MouseEnter for hover
-                >
-                  {cell}
-                </div>
-              ))
-            )}
+            {composition.sort((a, b) => a.zIndex - b.zIndex).map(renderElement)}
           </div>
         </CardContent>
-         <CardFooter className="flex justify-end gap-2">
-           <Button onClick={saveArt} variant="default" size="sm" className="bg-primary hover:bg-primary/90">
+        <CardFooter className="flex justify-end gap-2">
+           <Button onClick={saveComposition} variant="default" size="sm" className="bg-primary hover:bg-primary/90">
              <Save className="mr-2 h-4 w-4" /> Save
            </Button>
-           {shareUrl && (
-             <Button onClick={() => copyToClipboard(shareUrl)} variant="outline" size="sm" className="border-accent text-accent hover:bg-accent/10">
-               <Share2 className="mr-2 h-4 w-4" /> Copy Link
-             </Button>
-           )}
+           {/* Add share button later */}
         </CardFooter>
       </Card>
 
-      {/* Toolbar */}
-      <Card className="w-full lg:w-72 flex-shrink-0 bg-card shadow-lg">
-         <CardHeader>
-            <CardTitle>Tools</CardTitle>
-         </CardHeader>
-         <CardContent className="space-y-4">
-            <div className="flex items-center space-x-2">
-                 <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="flex-1 justify-start text-left font-normal">
-                         <span className="text-2xl mr-2">{selectedEmoji}</span> Selected
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <ScrollArea className="h-48">
-                        <div className="grid grid-cols-6 gap-1 p-2">
-                          {defaultEmojis.map((emoji) => (
-                            <Button
-                              key={emoji}
-                              variant={selectedEmoji === emoji && !isEraser ? 'secondary' : 'ghost'}
-                              size="icon"
-                              className="text-2xl"
-                              onClick={() => selectTool(emoji)}
-                            >
-                              {emoji}
-                            </Button>
-                          ))}
-                        </div>
-                      </ScrollArea>
-                    </PopoverContent>
-                  </Popover>
-                 <Button
-                    variant={isEraser ? 'secondary' : 'outline'}
-                    size="icon"
-                    onClick={activateEraser}
-                    title="Eraser"
-                    className={isEraser ? 'ring-2 ring-accent' : ''}
-                  >
-                    <Eraser className="h-5 w-5" />
+      {/* Toolbar & Controls */}
+      <Card className="w-full lg:w-80 flex-shrink-0 bg-card shadow-lg">
+        <CardHeader>
+          <CardTitle>Tools & Elements</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Tabs defaultValue="elements" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="elements">Elements</TabsTrigger>
+              <TabsTrigger value="controls" disabled={!selectedElementId}>Controls</TabsTrigger>
+            </TabsList>
+
+            {/* Elements Tab */}
+            <TabsContent value="elements">
+              <ScrollArea className="h-72 mt-2">
+                <div className="space-y-3 p-1">
+                  <div>
+                    <h3 className="text-sm font-medium mb-1 text-muted-foreground">Base Shapes</h3>
+                    <div className="grid grid-cols-3 gap-2">
+                      {elementLibrary.base.map((el, i) => (
+                         <Button key={`base-${i}`} variant="outline" size="sm" className="flex-col h-auto p-2" onClick={() => addElement('base', el)}>
+                           {el.shape === 'circle' && <CircleIcon className="h-6 w-6 mb-1" style={{ color: el.color }} />}
+                           {el.shape === 'square' && <Square className="h-6 w-6 mb-1" style={{ color: el.color }}/>}
+                           <span className="text-xs text-center">{el.name}</span>
+                         </Button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium mb-1 text-muted-foreground">Eyes</h3>
+                     <div className="grid grid-cols-3 gap-2">
+                      {elementLibrary.eye.map((el, i) => (
+                         <Button key={`eye-${i}`} variant="outline" size="sm" className="flex-col h-auto p-2" onClick={() => addElement('eye', el)}>
+                            <Eye className="h-6 w-6 mb-1" />
+                           <span className="text-xs text-center">{el.name}</span>
+                         </Button>
+                      ))}
+                    </div>
+                  </div>
+                   <div>
+                     <h3 className="text-sm font-medium mb-1 text-muted-foreground">Mouths</h3>
+                     <div className="grid grid-cols-3 gap-2">
+                       {elementLibrary.mouth.map((el, i) => (
+                         <Button key={`mouth-${i}`} variant="outline" size="sm" className="flex-col h-auto p-2" onClick={() => addElement('mouth', el)}>
+                           <Smile className="h-6 w-6 mb-1" />
+                           <span className="text-xs text-center">{el.name}</span>
+                         </Button>
+                       ))}
+                     </div>
+                   </div>
+                  {/* Add sections for Mouths, Accessories etc. */}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+
+            {/* Controls Tab */}
+            <TabsContent value="controls">
+              {selectedElement ? (
+                <div className="space-y-4 pt-2">
+                   <p className="text-sm font-medium text-center">Editing: {selectedElement.type} ({selectedElement.shape})</p>
+                  {/* Color Picker */}
+                   <div className="flex items-center gap-2">
+                     <Label htmlFor="color-picker" className="text-sm">Color:</Label>
+                      <Input
+                         id="color-picker"
+                         type="color"
+                         value={selectedElement.color}
+                         onChange={(e) => updateElement(selectedElementId!, { color: e.target.value })}
+                         className="w-16 h-8 p-0 border-none cursor-pointer"
+                       />
+                       {/* Quick Palette */}
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant="ghost" size="icon" title="Color Palette">
+                                    <Palette />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-2">
+                                <div className="grid grid-cols-5 gap-1">
+                                    {['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#000000', '#FFFFFF', '#CCCCCC', '#888888'].map(c => (
+                                        <Button key={c} style={{ backgroundColor: c }} className="h-6 w-6 rounded border" onClick={() => updateElement(selectedElementId!, { color: c })} />
+                                    ))}
+                                </div>
+                            </PopoverContent>
+                        </Popover>
+                   </div>
+
+                  {/* Size Slider */}
+                  <div>
+                      <Label htmlFor="size-slider" className="text-sm">Size:</Label>
+                      <Slider
+                          id="size-slider"
+                          min={5}
+                          max={200} // Adjust max size as needed
+                          step={1}
+                          value={[selectedElement.size]}
+                          onValueChange={(value) => updateElement(selectedElementId!, { size: value[0] })}
+                          className="mt-1"
+                      />
+                  </div>
+
+                    {/* Rotation Buttons */}
+                    <div className="flex items-center gap-2">
+                        <Label className="text-sm">Rotate:</Label>
+                        <Button variant="outline" size="icon" onClick={() => rotateElement('ccw')} title="Rotate Counter-Clockwise">
+                            <RotateCcw />
+                        </Button>
+                        <Button variant="outline" size="icon" onClick={() => rotateElement('cw')} title="Rotate Clockwise">
+                            <RotateCw />
+                        </Button>
+                    </div>
+
+
+                  {/* Layer Controls */}
+                  <div className="flex items-center gap-2">
+                     <Label className="text-sm">Layer:</Label>
+                    <Button variant="outline" size="icon" onClick={() => changeLayer('down')} title="Send Backward">
+                       <SendToBack />
+                     </Button>
+                     <Button variant="outline" size="icon" onClick={() => changeLayer('up')} title="Bring Forward">
+                       <BringToFront />
+                    </Button>
+                  </div>
+
+                  {/* Delete Button */}
+                  <Button variant="destructive" size="sm" className="w-full" onClick={deleteSelectedElement}>
+                    <Trash2 className="mr-2 h-4 w-4" /> Delete Element
                   </Button>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center pt-4">Select an element on the canvas to edit it.</p>
+              )}
+            </TabsContent>
+          </Tabs>
 
-            </div>
+          <hr className="my-4 border-border"/>
 
+          {/* Global Actions */}
+           <Button onClick={clearComposition} variant="outline" className="w-full">
+             <Trash2 className="mr-2 h-4 w-4" /> Clear Canvas
+           </Button>
 
-            {/* Action Buttons */}
-            <Button onClick={clearGrid} variant="destructive" className="w-full">
-              <Trash2 className="mr-2 h-4 w-4" /> Clear Grid
-            </Button>
+          {/* Premium Packs Placeholder */}
+          <div className="border-t border-border pt-4 mt-4">
+            <h3 className="text-sm font-medium mb-2 text-muted-foreground">Premium Packs</h3>
+            <p className="text-xs text-muted-foreground">Unlock more elements! (Coming Soon)</p>
+          </div>
 
-             {/* Premium Packs Placeholder */}
-            <div className="border-t border-border pt-4 mt-4">
-                 <h3 className="text-sm font-medium mb-2 text-muted-foreground">Premium Packs</h3>
-                 <p className="text-xs text-muted-foreground">Unlock more emojis! (Coming Soon)</p>
-                 {/* Add buttons for watching ads or purchasing later */}
-             </div>
-         </CardContent>
-
+        </CardContent>
       </Card>
-
-
     </div>
   );
 }
