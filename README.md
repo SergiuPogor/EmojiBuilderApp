@@ -1,6 +1,6 @@
-# Pixel Emoji Battle
+# Emoji Builder App
 
-Welcome to Pixel Emoji Battle! This is a fun, interactive web application built with Next.js where you can unleash your creativity by designing unique emoji-like characters using a variety of pre-defined elements. Share your creations, participate in daily challenges, and soon, battle your emojis against others!
+Welcome to Emoji Builder App! This is a fun, interactive web application built with Next.js where you can unleash your creativity by designing unique emoji-like characters using a variety of pre-defined elements. Share your creations, participate in daily challenges, and soon, battle your emojis against others!
 
 ## ✨ Features
 
@@ -44,7 +44,7 @@ Follow these instructions to get the project up and running on your local machin
 1.  **Clone the repository:**
     ```bash
     git clone <repository-url>
-    cd pixel-emoji-battle
+    cd emoji-builder-app # Or your project folder name
     ```
 2.  **Install dependencies:**
     ```bash

@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Pixel Emoji Battle', // Update title
-  description: 'Create, share, and battle with emoji art!', // Update description
+  title: 'Emoji Builder App', // Update title
+  description: 'Create, share, and build custom emoji art!', // Update description
 };
 
 export default function RootLayout({

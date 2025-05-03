@@ -7,10 +7,10 @@ export default function Home() {
   return (
     <div className="flex flex-col items-center justify-center space-y-8">
       <h1 className="text-4xl font-bold text-center text-primary">
-        Welcome to Pixel Emoji Battle!
+        Welcome to Emoji Builder App!
       </h1>
       <p className="text-lg text-center text-muted-foreground max-w-xl">
-        Unleash your creativity with emojis! Build stunning pixel art, share your masterpieces, and compete in daily challenges and head-to-head battles.
+        Unleash your creativity with emojis! Build stunning custom characters, share your masterpieces, and compete in daily challenges.
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-4xl pt-8">
@@ -18,10 +18,10 @@ export default function Home() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Paintbrush className="text-accent" />
-              Create Art
+              Create Emojis
             </CardTitle>
             <CardDescription>
-              Use our 16x16 grid editor to craft your unique emoji creations.
+              Use our intuitive composer to craft your unique emoji creations.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -40,7 +40,7 @@ export default function Home() {
               Daily Challenge
             </CardTitle>
             <CardDescription>
-              Join the daily themed challenge and see how your art stacks up!
+              Join the daily themed challenge and showcase your emoji art!
             </CardDescription>
           </CardHeader>
           <CardContent>

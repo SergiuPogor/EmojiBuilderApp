@@ -10,7 +10,7 @@ export default function Header() {
       <nav className="container mx-auto px-4 py-3 flex justify-between items-center">
         <Link href="/" passHref>
           <span className="text-2xl font-bold text-primary cursor-pointer hover:opacity-80 transition-opacity">
-            Pixel Emoji Battle
+            Emoji Builder App
           </span>
         </Link>
         <div className="flex items-center space-x-2">
